@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>動態密碼產生器</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+    body { background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .card { background: #1e293b; border: 1px solid #334155; padding: 2rem; border-radius: 16px; text-align: center; max-width: 400px; width: 90%; }
+    .pass-box { font-size: 2rem; font-weight: bold; color: #38bdf8; background: #0f172a; padding: 1rem; border-radius: 12px; letter-spacing: 4px; margin: 1.5rem 0; word-break: break-all; }
+    .timer { font-size: 0.9rem; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🔑 系統通行密碼</h2>
+    <p style="color:#64748b; font-size:0.85rem; margin-top:6px;">GMT+8 每 10 分鐘自動更新</p>
+    <div class="pass-box" id="password">載入中...</div>
+    <div class="timer" id="timer">距離下次更新：-- 秒</div>
+  </div>
+
+  <script>
+    async function generatePassword() {
+      const now = new Date();
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const gmt8 = new Date(utc + (3600000 * 8));
+
+      const yyyy = gmt8.getFullYear();
+      const mm = String(gmt8.getMonth() + 1).padStart(2, '0');
+      const dd = String(gmt8.getDate()).padStart(2, '0');
+      const hh = String(gmt8.getHours()).padStart(2, '0');
+      const minBlock = String(Math.floor(gmt8.getMinutes() / 10) * 10).padStart(2, '0');
+
+      const rawString = `${yyyy}${mm}${dd}${hh}${minBlock}00`;
+
+      // 使用 SHA-256 進行加密
+      const encoder = new TextEncoder();
+      const data = encoder.encode(rawString + "BOPOMOFO_SALT_2026");
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      return hashHex.substring(0, 8).toUpperCase();
+    }
+
+    async function update() {
+      document.getElementById('password').innerText = await generatePassword();
+      const now = new Date();
+      const secondsLeft = 600 - ((now.getMinutes() % 10) * 60 + now.getSeconds());
+      document.getElementById('timer').innerText = `距離下次更新：${secondsLeft} 秒`;
+    }
+
+    update();
+    setInterval(update, 1000);
+  </script>
+</body>
+</html>
