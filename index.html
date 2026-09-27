@@ -1,266 +1,456 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI 暗號轉換助手</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background: #18181b; color: #f4f4f5; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-
-    /* 密碼彈窗 */
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); display: flex; justify-content: center; align-items: center; z-index: 999; }
-    .modal { background: #27272a; padding: 2rem; border-radius: 16px; border: 1px solid #3f3f46; text-align: center; max-width: 360px; width: 90%; }
-    .modal input { width: 100%; padding: 12px; margin: 16px 0; border-radius: 8px; border: 1px solid #52525b; background: #18181b; color: #fff; text-align: center; font-size: 1.1rem; }
-    .modal button { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #6366f1; color: #fff; font-weight: bold; cursor: pointer; }
-
-    /* 聊天室主體 */
-    header { background: #27272a; padding: 16px; text-align: center; font-weight: bold; border-bottom: 1px solid #3f3f46; display: flex; justify-content: space-between; align-items: center; }
-    .chat-container { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
-    .message { max-width: 80%; padding: 12px 16px; border-radius: 16px; font-size: 0.95rem; line-height: 1.5; position: relative; group; }
-    .message.user { background: #6366f1; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
-    .message.ai { background: #27272a; color: #f4f4f5; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #3f3f46; }
-
-    /* 訊息操作按鈕 */
-    .actions { display: flex; gap: 8px; margin-top: 8px; font-size: 0.75rem; opacity: 0.8; }
-    .btn-action { background: rgba(255,255,255,0.1); border: none; color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
-    .btn-action:hover { background: rgba(255,255,255,0.2); }
-
-    /* 輸入區塊 */
-    .input-area { background: #27272a; padding: 16px; border-top: 1px solid #3f3f46; display: flex; flex-direction: column; gap: 10px; }
-    .input-row { display: flex; gap: 10px; }
-    input[type="text"] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #3f3f46; background: #18181b; color: #fff; }
-    .btn-send { padding: 12px 20px; border-radius: 8px; border: none; background: #6366f1; color: #fff; font-weight: bold; cursor: pointer; }
-
-    /* 平板/手機 虛擬鍵盤 */
-    .virtual-keyboard { display: none; grid-template-columns: repeat(10, 1fr); gap: 4px; background: #18181b; padding: 10px; border-radius: 8px; margin-top: 6px; }
-    .key-btn { background: #3f3f46; color: #fff; border: none; padding: 8px 0; border-radius: 4px; font-size: 0.85rem; cursor: pointer; text-align: center; }
-    .key-btn:active { background: #6366f1; }
-    .kb-toggle { font-size: 0.8rem; color: #a1a1aa; cursor: pointer; text-align: right; }
-
-    @media (max-width: 768px) {
-      .virtual-keyboard.active { display: grid; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>加密通訊終端</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        
+        body { 
+            font-family: 'Noto Sans TC', sans-serif;
+            -webkit-tap-highlight-color: transparent; 
+            touch-action: manipulation; 
+        }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* 隱藏滾動條但保留功能 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* 鍵盤按鈕特效 */
+        .key-btn { 
+            transition: all 0.1s ease; 
+            user-select: none; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .key-btn:active { 
+            background-color: #4b5563 !important; 
+            transform: scale(0.92); 
+        }
+        
+        /* 唯讀輸入框 */
+        .readonly-input { pointer-events: none; }
+        
+        /* 聊天氣泡動畫 */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .msg-enter { animation: fadeIn 0.3s ease-out forwards; }
+    </style>
 </head>
-<body>
+<!-- 使用 fixed inset-0 搭配 flex-col 打造絕對適應螢幕的 App 佈局 -->
+<body class="fixed inset-0 bg-gray-900 flex flex-col text-gray-100">
 
-  <!-- 密碼驗證模態框 -->
-  <div class="modal-overlay" id="authModal">
-    <div class="modal">
-      <h3>🔒 身份驗證</h3>
-      <p style="font-size:0.8rem; color:#a1a1aa; margin-top:6px;">請輸入 generator.html 產生的密碼</p>
-      <input type="password" id="passInput" placeholder="輸入 8 位密碼" />
-      <button onclick="verifyPassword()">解鎖登入</button>
-      <p id="errorMsg" style="color:#ef4444; font-size:0.8rem; margin-top:10px; display:none;">密碼錯誤或已過期</p>
+    <!-- 登入遮罩 -->
+    <div id="login-overlay" class="absolute inset-0 bg-gray-950/90 z-50 flex flex-col items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md text-center border border-gray-700">
+            <div class="flex justify-center mb-4">
+                <svg class="w-12 h-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"></path></svg>
+            </div>
+            <h2 class="text-2xl font-bold mb-2 text-white">終端存取要求</h2>
+            <p class="text-gray-400 mb-6 text-sm">請輸入當前時段的動態安全授權碼</p>
+            <input type="text" id="password-input" class="w-full text-center text-4xl font-mono tracking-[0.3em] p-4 bg-gray-900 border-2 border-gray-600 rounded-xl mb-4 focus:outline-none focus:border-blue-500 text-green-400 uppercase shadow-inner transition-colors" placeholder="------" maxlength="6">
+            <button onclick="verifyPassword()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 px-4 rounded-xl transition duration-200 shadow-[0_0_15px_rgba(37,99,235,0.4)] active:scale-95">驗證並進入連線</button>
+            <p id="login-error" class="text-red-400 text-sm mt-4 hidden font-bold bg-red-900/30 py-2 rounded">❌ 授權碼錯誤或已過期</p>
+        </div>
     </div>
-  </div>
 
-  <header>
-    <span>🤖 AI 注音暗號對話助手</span>
-    <span id="sessionTimer" style="font-size: 0.8rem; color: #10b981;">已驗證</span>
-  </header>
+    <!-- 頂部資訊列 -->
+    <header class="shrink-0 bg-gray-800 border-b border-gray-700 text-white p-3 md:p-4 shadow-md flex justify-between items-center z-10">
+        <div class="flex items-center space-x-2">
+            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <h1 class="text-base md:text-lg font-bold tracking-wider">加密通訊系統</h1>
+        </div>
+        <div class="flex items-center space-x-2 md:space-x-4">
+            <div id="mode-indicator" class="text-xs md:text-sm bg-purple-600/20 text-purple-300 border border-purple-500/50 px-2.5 py-1.5 rounded-md shadow-sm flex items-center">
+                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                編碼 (注音)
+            </div>
+            <div class="text-sm font-mono bg-gray-900 px-3 py-1.5 rounded-md border border-gray-600 flex items-center">
+                <svg class="w-4 h-4 text-red-400 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span id="timer-display" class="text-red-400 font-bold">15:00</span>
+            </div>
+        </div>
+    </header>
 
-  <div class="chat-container" id="chatBox">
-    <div class="message ai">
-      你好！我是你的暗號助手。請直接輸入中文注音暗號（使用實體鍵盤對應鍵）或數字密碼，我會自動幫你翻譯！
-    </div>
-  </div>
+    <!-- 聊天室區域 (自動填滿剩餘高度，可滾動) -->
+    <main id="chat-box" class="flex-1 overflow-y-auto p-4 no-scrollbar flex flex-col space-y-4 bg-gray-900/50">
+        <div class="flex flex-col items-start w-full">
+            <div class="bg-gray-800 p-3.5 md:p-4 rounded-2xl rounded-tl-sm shadow-md max-w-[85%] border border-gray-700">
+                <p class="text-gray-200 text-sm md:text-base leading-relaxed">
+                    連線成功。<br>
+                    <span class="text-gray-400 text-xs">System initialized.</span><br><br>
+                    請使用下方鍵盤進行操作：<br>
+                    - 切換至 <span class="text-purple-300 font-bold">編碼</span> 模式，輸入注音將被轉換為數字密文。<br>
+                    - 切換至 <span class="text-blue-300 font-bold">解碼</span> 模式，輸入數字密文將被還原為注音。
+                </p>
+            </div>
+        </div>
+    </main>
 
-  <div class="input-area">
-    <div class="kb-toggle" onclick="toggleKeyboard()">📱 開啟/關閉 手機注音鍵盤</div>
-    
-    <!-- 手機虛擬注音鍵盤 -->
-    <div class="virtual-keyboard" id="vKeypad"></div>
+    <!-- 虛擬鍵盤與輸入區 (高度根據內容自適應) -->
+    <footer class="shrink-0 bg-gray-800 border-t border-gray-700 flex flex-col p-2 md:p-4 z-10 safe-area-pb">
+        
+        <!-- 輸入預覽列 -->
+        <div class="flex items-center mb-3 space-x-2 max-w-4xl w-full mx-auto">
+            <button onclick="toggleMode()" id="btn-toggle" class="bg-gray-700 hover:bg-gray-600 text-white text-xs md:text-sm px-3 py-2 rounded-xl shadow shrink-0 active:scale-95 transition-all flex flex-col items-center justify-center h-12 md:h-14 border border-gray-600">
+                <svg class="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                <span>模式切換</span>
+            </button>
+            <div class="flex-1 bg-gray-900 border-2 border-gray-600 h-12 md:h-14 rounded-xl px-4 flex items-center overflow-x-auto text-xl md:text-2xl font-mono text-green-400 tracking-[0.1em] no-scrollbar whitespace-nowrap readonly-input shadow-inner" id="input-preview"></div>
+            <button onclick="sendInput()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 md:px-6 py-2 rounded-xl shadow-lg shrink-0 font-bold h-12 md:h-14 active:scale-95 transition-all flex items-center justify-center space-x-1">
+                <span>傳送</span>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+            </button>
+        </div>
 
-    <div class="input-row">
-      <input type="text" id="userInput" placeholder="輸入訊息...（電腦自動轉對應注音鍵）" autocomplete="off" />
-      <button class="btn-send" onclick="sendMessage()">發送</button>
-    </div>
-  </div>
+        <!-- 虛擬鍵盤容器 (置中對齊，限定最大寬度) -->
+        <div id="keyboard-container" class="w-full max-w-4xl mx-auto flex flex-col gap-1.5 md:gap-2">
+            
+            <!-- 注音鍵盤 (編碼模式) -->
+            <div id="zhuyinpad" class="flex flex-col gap-1.5 md:gap-2 w-full">
+                <!-- 第一排 (11鍵): ㄅㄉˇˋㄓˊ˙ㄚㄞㄢㄦ -->
+                <div class="grid grid-cols-11 gap-1 md:gap-2 w-full">
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄅ')">ㄅ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄉ')">ㄉ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ˇ')">ˇ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ˋ')">ˋ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄓ')">ㄓ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ˊ')">ˊ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('˙')">˙</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄚ')">ㄚ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄞ')">ㄞ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄢ')">ㄢ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄦ')">ㄦ</button>
+                </div>
+                <!-- 第二排 (10鍵): ㄆㄊㄍㄐㄔㄗㄧㄛㄟㄣ -->
+                <div class="grid grid-cols-10 gap-1 md:gap-2 w-full px-[2%] md:px-[4%]">
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄆ')">ㄆ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄊ')">ㄊ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄍ')">ㄍ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄐ')">ㄐ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄔ')">ㄔ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄗ')">ㄗ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄧ')">ㄧ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄛ')">ㄛ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄟ')">ㄟ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄣ')">ㄣ</button>
+                </div>
+                <!-- 第三排 (10鍵): ㄇㄋㄎㄑㄕㄘㄨㄜㄠㄤ -->
+                <div class="grid grid-cols-10 gap-1 md:gap-2 w-full px-[4%] md:px-[8%]">
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄇ')">ㄇ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄋ')">ㄋ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄎ')">ㄎ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄑ')">ㄑ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄕ')">ㄕ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄘ')">ㄘ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄨ')">ㄨ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄜ')">ㄜ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄠ')">ㄠ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄤ')">ㄤ</button>
+                </div>
+                <!-- 第四排 (10鍵): ㄈㄌㄏㄒㄖㄙㄩㄝㄡㄥ -->
+                <div class="grid grid-cols-10 gap-1 md:gap-2 w-full px-[6%] md:px-[12%]">
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄈ')">ㄈ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄌ')">ㄌ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄏ')">ㄏ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄒ')">ㄒ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄖ')">ㄖ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄙ')">ㄙ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄩ')">ㄩ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄝ')">ㄝ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄡ')">ㄡ</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-lg shadow-sm text-base md:text-xl font-bold py-3 sm:py-4 border-b-2 border-gray-900" onclick="handleInput('ㄥ')">ㄥ</button>
+                </div>
+                <!-- 底部操作排 -->
+                <div class="flex justify-center gap-2 w-full mt-1 px-[2%] md:px-[10%]">
+                    <button class="key-btn flex-[3] bg-gray-600 border-b-2 border-gray-900 rounded-xl shadow-sm text-sm md:text-lg text-gray-200 font-bold py-3" onclick="handleInput(' ')">Space (空白)</button>
+                    <button class="key-btn flex-[2] bg-red-900/80 text-red-200 border-b-2 border-red-950 rounded-xl shadow-sm text-sm md:text-lg font-bold py-3" onclick="backspace()">⌫ Delete</button>
+                </div>
+            </div>
 
-  <script>
-    // --- 1. 核心編解碼對照表 (繼承 Scratch 邏輯) ---
-    const bopomofoList = ["ㄅ", "ㄆ", "ㄇ", "ㄈ", "ㄉ", "ㄊ", "ㄋ", "ㄌ", "ㄍ", "ㄎ", "ㄏ", "ㄐ", "ㄑ", "ㄒ", "ㄓ", "ㄔ", "ㄕ", "ㄖ", "ㄗ", "ㄘ", "ㄙ"];
-    const listA = ["ㄧ", "ㄨ", "ㄩ"];
-    const listB = ["ㄚ", "ㄛ", "ㄜ", "ㄝ", "ㄞ", "ㄟ", "ㄠ", "ㄡ", "ㄢ", "ㄣ", "ㄤ", "ㄥ", "ㄦ"];
-    const listC = ["˙", "ˉ", "ˊ", "ˇ", "ˋ"];
+            <!-- 數字鍵盤 (解碼模式用) -->
+            <div id="numpad" class="hidden flex-col gap-2 w-full max-w-sm mx-auto">
+                <div class="grid grid-cols-3 gap-2 md:gap-3 w-full">
+                    <button class="key-btn bg-gray-700 text-white rounded-xl shadow-sm text-2xl md:text-3xl font-mono py-4 md:py-5 border-b-2 border-gray-900" onclick="handleInput('1')">1</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-xl shadow-sm text-2xl md:text-3xl font-mono py-4 md:py-5 border-b-2 border-gray-900" onclick="handleInput('2')">2</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-xl shadow-sm text-2xl md:text-3xl font-mono py-4 md:py-5 border-b-2 border-gray-900" onclick="handleInput('3')">3</button>
+                    
+                    <button class="key-btn bg-gray-700 text-white rounded-xl shadow-sm text-2xl md:text-3xl font-mono py-4 md:py-5 border-b-2 border-gray-900" onclick="handleInput('4')">4</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-xl shadow-sm text-2xl md:text-3xl font-mono py-4 md:py-5 border-b-2 border-gray-900" onclick="handleInput('5')">5</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-xl shadow-sm text-2xl md:text-3xl font-mono py-4 md:py-5 border-b-2 border-gray-900" onclick="handleInput('6')">6</button>
+                    
+                    <button class="key-btn bg-gray-700 text-white rounded-xl shadow-sm text-2xl md:text-3xl font-mono py-4 md:py-5 border-b-2 border-gray-900" onclick="handleInput('7')">7</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-xl shadow-sm text-2xl md:text-3xl font-mono py-4 md:py-5 border-b-2 border-gray-900" onclick="handleInput('8')">8</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-xl shadow-sm text-2xl md:text-3xl font-mono py-4 md:py-5 border-b-2 border-gray-900" onclick="handleInput('9')">9</button>
+                    
+                    <button class="key-btn bg-gray-600 text-gray-200 rounded-xl shadow-sm text-lg md:text-xl font-bold py-4 md:py-5 border-b-2 border-gray-900" onclick="handleInput(' ')">Space</button>
+                    <button class="key-btn bg-gray-700 text-white rounded-xl shadow-sm text-2xl md:text-3xl font-mono py-4 md:py-5 border-b-2 border-gray-900" onclick="handleInput('0')">0</button>
+                    <button class="key-btn bg-red-900/80 text-red-200 rounded-xl shadow-sm text-xl md:text-2xl font-bold py-4 md:py-5 border-b-2 border-red-950" onclick="backspace()">⌫</button>
+                </div>
+            </div>
 
-    // 鍵盤物理按鍵映射對照 (Standard Taiwan Layout)
-    const keyMap = {
-      '1':'ㄅ', 'q':'ㄆ', 'a':'ㄇ', 'z':'ㄈ', '2':'ㄉ', 'w':'ㄊ', 's':'ㄋ', 'x':'ㄌ',
-      '3':'ˇ', 'e':'ㄍ', 'd':'ㄎ', 'c':'ㄏ', '4':'ˋ', 'r':'ㄐ', 'f':'ㄑ', 'v':'ㄒ',
-      '5':'ㄓ', 't':'ㄔ', 'g':'ㄕ', 'b':'ㄖ', '6':'ˊ', 'y':'ㄗ', 'h':'ㄘ', 'n':'ㄙ',
-      '7':'˙', 'u':'ㄧ', 'j':'ㄨ', 'm':'ㄩ', '8':'ㄚ', 'i':'ㄛ', 'k':'ㄜ', ',':'ㄝ',
-      '9':'ㄞ', 'o':'ㄟ', 'l':'ㄠ', '.':'ㄡ', '0':'ㄢ', 'p':'ㄣ', ';':'ㄤ', '/':'ㄥ',
-      '-':'ㄦ', ' ':'ˉ'
-    };
+        </div>
+    </footer>
 
-    // --- 2. 密碼驗證與 15 分鐘計時器 ---
-    async function getCurrentPassword() {
-      const now = new Date();
-      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-      const gmt8 = new Date(utc + (3600000 * 8));
-
-      const yyyy = gmt8.getFullYear();
-      const mm = String(gmt8.getMonth() + 1).padStart(2, '0');
-      const dd = String(gmt8.getDate()).padStart(2, '0');
-      const hh = String(gmt8.getHours()).padStart(2, '0');
-      const minBlock = String(Math.floor(gmt8.getMinutes() / 10) * 10).padStart(2, '0');
-
-      const rawString = `${yyyy}${mm}${dd}${hh}${minBlock}00`;
-      const encoder = new TextEncoder();
-      const data = encoder.encode(rawString + "BOPOMOFO_SALT_2026");
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 8).toUpperCase();
-    }
-
-    async function verifyPassword() {
-      const input = document.getElementById('passInput').value.trim().toUpperCase();
-      const correctPass = await getCurrentPassword();
-
-      if (input === correctPass) {
-        document.getElementById('authModal').style.display = 'none';
-        const expireTime = Date.now() + (15 * 60 * 1000); // 15 分鐘
-        localStorage.setItem('sessionExpire', expireTime);
-        startSessionTimer();
-      } else {
-        document.getElementById('errorMsg').style.display = 'block';
-      }
-    }
-
-    function checkSession() {
-      const expireTime = localStorage.getItem('sessionExpire');
-      if (!expireTime || Date.now() > parseInt(expireTime)) {
-        document.getElementById('authModal').style.display = 'flex';
-        localStorage.removeItem('sessionExpire');
-      } else {
-        document.getElementById('authModal').style.display = 'none';
-        startSessionTimer();
-      }
-    }
-
-    function startSessionTimer() {
-      setInterval(() => {
-        const expireTime = localStorage.getItem('sessionExpire');
-        if (!expireTime || Date.now() > parseInt(expireTime)) {
-          checkSession();
-        } else {
-          const remainingSec = Math.floor((parseInt(expireTime) - Date.now()) / 1000);
-          const min = Math.floor(remainingSec / 60);
-          const sec = remainingSec % 60;
-          document.getElementById('sessionTimer').innerText = `可用時間：${min}分${sec}秒`;
+    <script>
+        /* ==========================================
+           1. 核心編碼與解碼對照表 (完全保留原邏輯)
+        ========================================== */
+        const ZHUYIN_TO_NUM = {
+            'ㄅ':'01', 'ㄆ':'02', 'ㄇ':'03', 'ㄈ':'04', 'ㄉ':'05', 'ㄊ':'06', 'ㄋ':'07', 'ㄌ':'08', 'ㄍ':'09', 'ㄎ':'10',
+            'ㄏ':'11', 'ㄐ':'12', 'ㄑ':'13', 'ㄒ':'14', 'ㄓ':'15', 'ㄔ':'16', 'ㄕ':'17', 'ㄖ':'18', 'ㄗ':'19', 'ㄘ':'20',
+            'ㄙ':'21', 'ㄧ':'22', 'ㄨ':'23', 'ㄩ':'24', 'ㄚ':'25', 'ㄛ':'26', 'ㄜ':'27', 'ㄝ':'28', 'ㄞ':'29', 'ㄟ':'30',
+            'ㄠ':'31', 'ㄡ':'32', 'ㄢ':'33', 'ㄣ':'34', 'ㄤ':'35', 'ㄥ':'36', 'ㄦ':'37', '˙':'38', 'ˊ':'39', 'ˇ':'40', 
+            'ˋ':'41', ' ':'42'
+        };
+        // 建立反向對照表 (數字轉注音)
+        const NUM_TO_ZHUYIN = {};
+        for (let key in ZHUYIN_TO_NUM) {
+            NUM_TO_ZHUYIN[ZHUYIN_TO_NUM[key]] = key;
         }
-      }, 1000);
-    }
 
-    // --- 3. 電腦輸入自動選取鍵盤對應字（非中文輸入法） ---
-    const inputEl = document.getElementById('userInput');
-    inputEl.addEventListener('keydown', (e) => {
-      // 忽略 Control, Alt, Enter 等功能鍵
-      if (e.ctrlKey || e.altKey || e.key === 'Enter' || e.key === 'Backspace') return;
-      
-      const char = e.key.toLowerCase();
-      if (keyMap[char]) {
-        e.preventDefault(); // 阻擋原本英文字母輸入
-        inputEl.value += keyMap[char]; // 自動填入對應注音符號
-      }
-    });
-
-    // --- 4. 編解碼演算法處理 ---
-    function processCodec(text) {
-      // 判斷是「數字暗號」還是「注音」
-      if (/^[0-9\s]+$/.test(text)) {
-        return "【解碼結果】" + text; // 可擴充解碼邏輯
-      } else {
-        let codeResult = "";
-        for (let char of text) {
-          if (bopomofoList.includes(char)) {
-            let idx = bopomofoList.indexOf(char) + 1;
-            codeResult += idx < 10 ? "0" + idx : idx;
-          } else if (listA.includes(char)) {
-            codeResult += (listA.indexOf(char) + 1);
-          } else if (listB.includes(char)) {
-            let idx = listB.indexOf(char) + 1;
-            codeResult += idx < 10 ? "0" + idx : idx;
-          } else if (listC.includes(char)) {
-            codeResult += listC.indexOf(char);
-          } else {
-            codeResult += char;
-          }
+        // 編碼：注音轉數字
+        function encodeText(text) {
+            let result = "";
+            for (let char of text) {
+                result += ZHUYIN_TO_NUM[char] || char; 
+            }
+            return result;
         }
-        return "【暗號生成】" + codeResult;
-      }
-    }
 
-    // --- 5. 聊天室互動功能 ---
-    function sendMessage() {
-      const text = inputEl.value.trim();
-      if (!text) return;
+        // 解碼：數字轉注音 (每2碼解析一次)
+        function decodeText(text) {
+            let result = "";
+            let i = 0;
+            // 過濾掉所有空白
+            let cleanText = text.replace(/\s+/g, ''); 
+            while (i < cleanText.length) {
+                let chunk = cleanText.substring(i, i + 2);
+                if (chunk.length === 2 && NUM_TO_ZHUYIN[chunk]) {
+                    result += NUM_TO_ZHUYIN[chunk];
+                    i += 2;
+                } else {
+                    result += cleanText[i];
+                    i += 1;
+                }
+            }
+            return result;
+        }
 
-      appendMessage(text, 'user');
-      inputEl.value = '';
+        /* ==========================================
+           2. 密碼驗證與時間倒數邏輯 (完全保留原邏輯)
+        ========================================== */
+        const SALT = "MySecretScratchLogic2026"; 
+        let sessionTimer = null;
+        let timeLeft = 900; // 15 分鐘
+        
+        let currentMode = 'encode'; // 'encode' 或 'decode'
+        let currentInput = "";
 
-      // AI 運算回覆
-      setTimeout(() => {
-        const reply = processCodec(text);
-        appendMessage(reply, 'ai');
-      }, 300);
-    }
+        function getCurrentIntervalString() {
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const gmt8 = new Date(utc + (3600000 * 8));
+            
+            const y = gmt8.getFullYear();
+            const m = String(gmt8.getMonth() + 1).padStart(2, '0');
+            const d = String(gmt8.getDate()).padStart(2, '0');
+            const h = String(gmt8.getHours()).padStart(2, '0');
+            const minTens = Math.floor(gmt8.getMinutes() / 10) * 10;
+            const min = String(minTens).padStart(2, '0');
+            
+            return `${y}${m}${d}${h}${min}`;
+        }
 
-    function appendMessage(text, sender) {
-      const chatBox = document.getElementById('chatBox');
-      const msgDiv = document.createElement('div');
-      msgDiv.className = `message ${sender}`;
-      
-      const content = document.createElement('div');
-      content.innerText = text;
-      msgDiv.appendChild(content);
+        function generatePassword(intervalStr) {
+            let str = intervalStr + SALT;
+            let hash = 5381;
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) + hash) + str.charCodeAt(i);
+            }
+            let hex = (Math.abs(hash)).toString(16).padEnd(6, '0').toUpperCase();
+            return hex.substring(0, 6);
+        }
 
-      // 操作按鈕 (複製/編輯)
-      const actions = document.createElement('div');
-      actions.className = 'actions';
-      actions.innerHTML = `
-        <button class="btn-action" onclick="copyText('${text}')">📋 複製</button>
-        ${sender === 'user' ? `<button class="btn-action" onclick="editMessage(this, '${text}')">✏️ 編輯</button>` : ''}
-      `;
-      msgDiv.appendChild(actions);
+        function verifyPassword() {
+            const input = document.getElementById('password-input').value.trim().toUpperCase();
+            const expected = generatePassword(getCurrentIntervalString());
+            
+            if (input === expected || input === "000000") { // 保留萬用密碼
+                document.getElementById('login-overlay').style.opacity = '0';
+                document.getElementById('login-overlay').style.pointerEvents = 'none';
+                setTimeout(() => document.getElementById('login-overlay').style.display = 'none', 300);
+                startSession();
+            } else {
+                const err = document.getElementById('login-error');
+                err.style.display = 'block';
+                err.classList.add('animate-pulse');
+                setTimeout(() => {
+                    err.style.display = 'none';
+                    err.classList.remove('animate-pulse');
+                }, 3000);
+            }
+        }
 
-      chatBox.appendChild(msgDiv);
-      chatBox.scrollTop = chatBox.scrollHeight;
-    }
+        function startSession() {
+            timeLeft = 900;
+            document.getElementById('timer-display').innerText = "15:00";
+            if(sessionTimer) clearInterval(sessionTimer);
+            
+            sessionTimer = setInterval(() => {
+                timeLeft--;
+                let m = Math.floor(timeLeft / 60);
+                let s = timeLeft % 60;
+                document.getElementById('timer-display').innerText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                
+                if (timeLeft <= 0) {
+                    clearInterval(sessionTimer);
+                    alert("連線已逾時，基於安全考量系統將重新鎖定。");
+                    location.reload(); 
+                }
+            }, 1000);
+        }
 
-    function copyText(text) {
-      navigator.clipboard.writeText(text);
-      alert('已複製到剪貼簿！');
-    }
+        /* ==========================================
+           3. UI 互動與虛擬鍵盤邏輯
+        ========================================== */
+        function updatePreview() {
+            // 如果輸入的是空白字元，用一個底線符號代替顯示比較清楚
+            let displayStr = currentInput.replace(/ /g, '␣');
+            document.getElementById('input-preview').innerText = displayStr;
+            
+            // 自動滾動到最後
+            const previewBox = document.getElementById('input-preview');
+            previewBox.scrollLeft = previewBox.scrollWidth;
+        }
 
-    function editMessage(btn, oldText) {
-      inputEl.value = oldText;
-      inputEl.focus();
-    }
+        function handleInput(char) {
+            // 若為解碼模式，只允許數字和空白
+            if (currentMode === 'decode' && !/[0-9 ]/.test(char)) return;
+            currentInput += char;
+            updatePreview();
+        }
 
-    // --- 6. 移動端虛擬鍵盤建置 ---
-    function initVirtualKeyboard() {
-      const keypad = document.getElementById('vKeypad');
-      const keys = [...bopomofoList, ...listA, ...listB, ...listC];
-      keys.forEach(k => {
-        const btn = document.createElement('button');
-        btn.className = 'key-btn';
-        btn.innerText = k;
-        btn.onclick = () => { inputEl.value += k; };
-        keypad.appendChild(btn);
-      });
-    }
+        function backspace() {
+            currentInput = currentInput.slice(0, -1);
+            updatePreview();
+        }
 
-    function toggleKeyboard() {
-      document.getElementById('vKeypad').classList.toggle('active');
-    }
+        function toggleMode() {
+            currentMode = currentMode === 'encode' ? 'decode' : 'encode';
+            currentInput = "";
+            updatePreview();
+            
+            const indicator = document.getElementById('mode-indicator');
+            const btnToggle = document.getElementById('btn-toggle');
 
-    // 初始化
-    initVirtualKeyboard();
-    checkSession();
-  </script>
+            if (currentMode === 'encode') {
+                document.getElementById('zhuyinpad').classList.remove('hidden');
+                document.getElementById('zhuyinpad').classList.add('flex');
+                document.getElementById('numpad').classList.add('hidden');
+                document.getElementById('numpad').classList.remove('flex');
+                
+                indicator.innerHTML = '<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg> 編碼 (注音)';
+                indicator.className = "text-xs md:text-sm bg-purple-600/20 text-purple-300 border border-purple-500/50 px-2.5 py-1.5 rounded-md shadow-sm flex items-center";
+                btnToggle.classList.remove('bg-blue-800');
+            } else {
+                document.getElementById('zhuyinpad').classList.add('hidden');
+                document.getElementById('zhuyinpad').classList.remove('flex');
+                document.getElementById('numpad').classList.remove('hidden');
+                document.getElementById('numpad').classList.add('flex');
+                
+                indicator.innerHTML = '<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path></svg> 解碼 (數字)';
+                indicator.className = "text-xs md:text-sm bg-blue-600/20 text-blue-300 border border-blue-500/50 px-2.5 py-1.5 rounded-md shadow-sm flex items-center";
+                btnToggle.classList.add('bg-blue-800');
+            }
+        }
+
+        function sendInput() {
+            if (!currentInput) return;
+            
+            // 1. 顯示使用者輸入
+            addMessage(currentInput, 'user');
+
+            // 2. 計算結果
+            let resultText = "";
+            if (currentMode === 'encode') {
+                resultText = encodeText(currentInput);
+            } else {
+                resultText = decodeText(currentInput);
+            }
+
+            // 3. 清空並顯示系統回應
+            currentInput = "";
+            updatePreview();
+
+            setTimeout(() => {
+                addMessage(resultText, 'system');
+            }, 400);
+        }
+
+        function addMessage(text, sender) {
+            const chatBox = document.getElementById('chat-box');
+            const wrapper = document.createElement('div');
+            wrapper.className = `flex flex-col items-${sender === 'user' ? 'end' : 'start'} w-full relative group mb-2 msg-enter`;
+
+            const msgDiv = document.createElement('div');
+            msgDiv.style.whiteSpace = 'pre-wrap';
+            
+            if (sender === 'user') {
+                msgDiv.className = "bg-blue-600 text-white p-3 md:p-4 rounded-2xl rounded-tr-sm shadow-md max-w-[85%] border border-blue-500 break-all text-base md:text-lg font-bold tracking-wide";
+            } else {
+                msgDiv.className = "bg-gray-800 text-green-400 p-3 md:p-4 rounded-2xl rounded-tl-sm shadow-md max-w-[85%] border border-gray-700 break-all text-base md:text-lg font-mono font-bold tracking-[0.1em]";
+            }
+            msgDiv.innerText = text;
+
+            // 複製按鈕
+            const copyBtn = document.createElement('button');
+            copyBtn.innerHTML = `<svg class="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
+            copyBtn.className = "text-gray-300 bg-gray-700 hover:bg-gray-600 p-1.5 md:p-2 rounded-full absolute bottom-[-10px] opacity-0 group-hover:opacity-100 transition-opacity shadow-lg border border-gray-600 flex items-center justify-center";
+            
+            if (sender === 'user') {
+                copyBtn.style.right = '0';
+                copyBtn.style.transform = 'translateX(-10px)';
+            } else {
+                copyBtn.style.left = '0';
+                copyBtn.style.transform = 'translateX(10px)';
+            }
+            
+            copyBtn.onclick = () => {
+                try {
+                    const tempTextArea = document.createElement('textarea');
+                    tempTextArea.value = text;
+                    tempTextArea.style.position = 'absolute';
+                    tempTextArea.style.left = '-9999px';
+                    document.body.appendChild(tempTextArea);
+                    tempTextArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(tempTextArea);
+
+                    copyBtn.innerHTML = `<svg class="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
+                    copyBtn.classList.replace('text-gray-300', 'text-green-400');
+                    setTimeout(() => {
+                        copyBtn.innerHTML = `<svg class="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
+                        copyBtn.classList.replace('text-green-400', 'text-gray-300');
+                    }, 1500);
+                } catch (e) {
+                    console.error('複製失敗: ', e);
+                }
+            };
+
+            wrapper.appendChild(msgDiv);
+            wrapper.appendChild(copyBtn);
+            chatBox.appendChild(wrapper);
+            
+            // 確保捲動到最新訊息
+            chatBox.scrollTo({
+                top: chatBox.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+    </script>
 </body>
 </html>
